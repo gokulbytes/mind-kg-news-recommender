@@ -1,0 +1,55 @@
+The recommend_news function takes a user ID and returns the top-N most relevant articles for that user.
+'''
+def recommend_news(user_id, news_embeddings, user_embeddings, user_behaviors, news_df, n=10):
+    if user_id not in user_embeddings:
+        return pd.DataFrame()
+
+    user_embedding = user_embeddings[user_id]
+    user_clicked_news = user_behaviors.get(user_id, {}).get('clicked_history', []) + user_behaviors.get(user_id, {}).get('clicked_impressions', [])
+    similarity_scores = []
+    for news_id, news_embedding in news_embeddings.items():
+        if news_id not in user_clicked_news:
+            similarity = cosine_similarity([user_embedding], [news_embedding])[0][0]
+            similarity_scores.append((news_id, similarity))
+    similarity_scores.sort(key=lambda x: x[1], reverse=True)
+
+    recommended_news_details = []
+    for news_id, score in similarity_scores[:n]:
+        news_info = news_df[news_df['NewsID'] == news_id].iloc[0]
+        recommended_news_details.append({'NewsID': news_id, 'Title': news_info['Title'], 'URL': news_info['URL']})
+
+    return pd.DataFrame(recommended_news_details)
+'''
+
+Step 1: Validate the User
+If the user does not have an embedding (for example, a completely new user), the function immediately returns an empty result.
+This avoids unreliable recommendations for cold-start users.
+
+Step 2: Collect User Interaction History
+The user’s interaction history is constructed by combining:
+- Previously clicked articles (clicked_history)
+- Clicked articles from impressions (clicked_impressions)
+
+Step 3: Compute Similarity Scores
+For every candidate article:
+- Compute cosine similarity between the user embedding and the article embedding
+- Store the score along with the article ID
+
+Cosine similarity is used because:
+- It is scale-invariant
+- It works well with averaged embeddings
+- It is computationally cheap and stable
+
+Step 4: Rank and Select Top Articles
+All candidate articles are sorted in descending order of similarity. The top-N articles are selected as recommendations.
+For each selected article, metadata such as title and URL is retrieved from the original news dataframe to produce a user-facing result.
+The output is returned as a Pandas DataFrame for easy inspection or downstream use.
+
+'''
+example_user_id = list(user_embeddings.keys())[0]
+recommended_articles = recommend_news(example_user_id, news_embeddings, user_embeddings, user_behaviors, news_df)
+print(f'Top 10 recommended articles for user {example_user_id}:')
+print(recommended_articles)
+'''
+This recommendation step closes the loop from raw data to user-facing output.
+By grounding recommendations in knowledge-graph-based embeddings, the system produces results that are simple, interpretable, and easy to evolve into more advanced models.
