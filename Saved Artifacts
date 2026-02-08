@@ -1,0 +1,75 @@
+This section explains how the saved artifacts—user_behaviors.pkl, news_embeddings.pkl, and user_embeddings.pkl—fit into a complete recommendation pipeline.
+Rather than treating these files as the recommender itself, they should be understood as inputs and intermediate representations that enable retrieval, ranking, and learning.
+
+news_embeddings.pkl
+- Represents the semantic meaning of each news article
+- Derived from entity-level knowledge graph embeddings
+- Used on the item side of the recommender
+In a pipeline, this file supports:
+- Candidate generation
+- Similarity-based retrieval
+- Item feature input to ranking models
+
+user_embeddings.pkl
+- Represents a snapshot of user interests
+- Computed from clicked news articles
+- Static and periodically refreshed
+In a pipeline, this file is best treated as:
+- A baseline user profile
+- An initialization for more dynamic user models
+- A fallback for sparse or cold-start users
+
+user_behaviors.pkl
+- Represents raw supervision data
+- Contains both positive (clicked) and negative (ignored) signals
+This file is not used directly at serving time. Instead, it is critical for:
+- Training ranking models
+- Negative sampling
+- Offline evaluation
+
+END-TO-END RECOMMENDATION PIPELINE
+A practical recommendation system built on these artifacts follows a multi-stage design.
+'''
+Offline Processing
+------------------
+Raw Logs -> user_behaviors.pkl
+KG + Entities -> news_embeddings.pkl
+User Clicks -> user_embeddings.pkl
+
+Online Serving
+--------------
+User Request -> Candidate Generation -> Ranking -> Recommendation
+'''
+
+Stage 1: Candidate Generation
+Candidate generation reduces the universe of news articles to a manageable subset.
+How the Files Are Used
+- Load news_embeddings.pkl into a vector index (e.g., FAISS)
+- Retrieve nearest neighbors using the user embedding from user_embeddings.pkl
+This stage prioritizes speed over precision and typically returns hundreds of candidates.
+
+Stage 2: Ranking
+Ranking selects the best articles from the candidate set.
+Feature Sources
+- Similarity between user and news embeddings
+- Category and entity overlap
+- Recency and popularity features
+Training Signal
+- Use user_behaviors.pkl to define:
+- Positive samples (clicked impressions)
+- Negative samples (ignored impressions)
+The ranking model learns how to weight different signals rather than relying on cosine similarity alone.
+
+Stage 3: Serving and Feedback Loop
+At serving time:
+- Only embeddings and lightweight models are used
+- Raw behavior logs are not loaded
+New user interactions are logged and periodically folded back into:
+- Updated user_behaviors.pkl
+- Refreshed user embeddings
+- Optionally retrained ranking models
+This closes the feedback loop.
+
+The saved .pkl files act as building blocks rather than final outputs. 
+news_embeddings.pkl enables fast retrieval, user_embeddings.pkl provides a snapshot of user interests, and user_behaviors.pkl supplies the learning signal.
+Wired together correctly, they form a scalable and extensible recommendation pipeline rather than a standalone heuristic system.
