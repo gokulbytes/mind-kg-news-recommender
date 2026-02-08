@@ -1,0 +1,88 @@
+This document explains the idea and implementation behind constructing a knowledge graph using news article metadata and user interaction logs. 
+The code takes raw, messy tabular data and turns it into structured relationships that can later be used for recommendation systems, graph neural networks, or explainable AI models.
+The goal is simple: represent what an article is about and how users interact with articles in a way that machines can reason over — not just memorize.
+
+NEWS DATA
+Each row represents a news article and includes:
+- NewsID: unique identifier for the article
+- Category: high-level topic (e.g., Sports, Politics)
+- SubCategory: more specific topic
+- TitleEntities: named entities extracted from the title (stored as JSON strings)
+- AbstractEntities: named entities extracted from the abstract (also JSON strings)
+
+USER BEHAVIOR DATA
+Each row represents a user impression session and includes:
+- UserID: unique user identifier
+- History: space-separated list of articles the user previously clicked
+- Impressions: space-separated list of NewsID-clickLabel pairs, where: -1 means clicked and -0 means shown but ignored
+
+CORE IDEA: Edges, Not Tables
+Instead of keeping this information in tables, we convert it into graph edges of the form: (source) -> [relation] -> (target)
+Each edge captures a fact, such as:
+- “This article belongs to this category”
+- “This article mentions this entity”
+'''
+graph_edges = []
+
+for index, row in news_df.iterrows():
+    news_id = row['NewsID']
+    category = row['Category']
+    subcategory = row['SubCategory']
+    graph_edges.append({'source': news_id, 'relation': 'has_category', 'target': category})
+    graph_edges.append({'source': news_id, 'relation': 'has_subcategory', 'target': subcategory})
+'''
+All edges are stored in a simple Python list called graph_edges, where each edge is a dictionary. This keeps the representation flexible and framework-agnostic.
+
+Every news article belongs to exactly one category and one subcategory. These relationships are explicitly added to the graph.
+'''
+import json
+
+for index, row in news_df.iterrows():
+    news_id = row['NewsID']
+    title_entities_str = row['TitleEntities']
+    abstract_entities_str = row['AbstractEntities']
+
+    try:
+        title_entities = json.loads(title_entities_str)
+    except json.JSONDecodeError:
+        title_entities = []
+
+    try:
+        abstract_entities = json.loads(abstract_entities_str)
+    except json.JSONDecodeError:
+        abstract_entities = []
+    all_entities = title_entities + abstract_entities
+    entity_labels = [entity['Label'] for entity in all_entities if 'Label' in entity]
+
+    for entity_label in entity_labels:
+        graph_edges.append({'source': news_id, 'relation': 'mentions_entity', 'target': entity_label})
+'''
+- Iterates over every article in news_df
+- Extracts the article ID, category, and subcategory
+- Creates two edges per article: NewsID → has_category → Category and NewsID → has_subcategory → SubCategory
+
+User interaction logs are not immediately usable. They are compact, string-based, and mix positive and negative signals. This section turns them into a clean structure.
+'''
+from tqdm import tqdm
+
+user_behaviors = {}
+for index, row in tqdm(behaviors_df.iterrows(), total=behaviors_df.shape[0]):
+    user_id = row['UserID']
+    history = row['History'] # String of space-separated NewsIDs the user has clicked
+    impressions = row['Impressions'] # String of space-separated NewsID-clickStatus pairs
+    clicked_articles = history.split() if history else []
+    impression_list = impressions.split()
+    clicked_impressions = [imp.split('-')[0] for imp in impression_list if imp.endswith('-1')]
+    unclicked_impressions = [imp.split('-')[0] for imp in impression_list if imp.endswith('-0')]
+    user_behaviors[user_id] = {'clicked_history': clicked_articles, 'clicked_impressions': clicked_impressions, 'unclicked_impressions': unclicked_impressions}
+
+print(f'Processed behaviors for {len(user_behaviors)} users.')
+'''
+- Iterates through every row in behaviors_df with a progress bar
+- Safely splits the click history into a list of article IDs
+- Parses impressions and separates clicked (-1) from unclicked (-0) articles
+
+This approach has several advantages:
+- It cleanly separates content understanding from user behavior
+- It is robust to missing or malformed data
+- It produces a graph-ready representation that can be reused across models
