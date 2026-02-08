@@ -1,0 +1,71 @@
+This section explains how the knowledge graph is converted into dense vector embeddings that can be used directly by machine learning models.
+The idea is to move from symbolic graph structure to numerical representations while preserving as much semantic signal as possible.
+The process happens in three stages:
+- Load pretrained entity and relation embeddings
+- Build news article embeddings from entities
+- Build user embeddings from clicked news articles
+
+NEWS ARTICLE EMBEDDINGS
+An article can be approximated by the average of the embeddings of its mentioned entities. While simple, this assumption works surprisingly well as a baseline and is computationally efficient.
+'''
+news_embeddings = {}
+
+for index, row in tqdm(news_df.iterrows(), total=news_df.shape[0]):
+    news_id = row['NewsID']
+    title_entities_str = row['TitleEntities']
+    abstract_entities_str = row['AbstractEntities']
+
+    try:
+        title_entities = json.loads(title_entities_str)
+    except json.JSONDecodeError:
+        title_entities = []
+
+    try:
+        abstract_entities = json.loads(abstract_entities_str)
+    except json.JSONDecodeError:
+        abstract_entities = []
+    all_entities = title_entities + abstract_entities
+    entity_keys = [entity['WikidataId'] for entity in all_entities if 'WikidataId' in entity]
+    news_embedding = np.zeros(list(entity_embeddings.values())[0].shape)
+
+    if entity_keys:
+        entity_embeddings_list = [entity_embeddings[key] for key in entity_keys if key in entity_embeddings]
+        if entity_embeddings_list:
+            news_embedding = np.mean(entity_embeddings_list, axis=0)
+    news_embeddings[news_id] = news_embedding
+
+print(f'Generated embeddings for {len(news_embeddings)} news articles.')
+'''
+- For each article, parse title and abstract entities
+- Extract valid Wikidata entity IDs
+- Look up their embeddings
+- Compute the mean of all available entity vectors
+
+USER EMBEDDINGS
+A user’s preferences can be modeled as the average of the embeddings of the articles they clicked.
+This treats each click as a weak signal of interest and aggregates those signals into a single vector.
+'''
+# Create user embeddings
+user_embeddings = {}
+
+for user_id, behaviors in tqdm(user_behaviors.items(), total=len(user_behaviors)):
+    clicked_articles = behaviors['clicked_history'] + behaviors['clicked_impressions']
+    user_embedding = np.zeros(list(news_embeddings.values())[0].shape)
+
+    if clicked_articles:
+        clicked_news_embeddings = [news_embeddings[news_id] for news_id in clicked_articles if news_id in news_embeddings]
+        if clicked_news_embeddings:
+            user_embedding = np.mean(clicked_news_embeddings, axis=0)
+    user_embeddings[user_id] = user_embedding
+
+print(f'Generated embeddings for {len(user_embeddings)} users.')
+'''
+- Combine historical clicks and clicked impressions
+- Retrieve embeddings for all clicked articles
+- Compute their mean to form the user embedding
+
+EMBEDDING PIPELINE
+User -> Clicked News -> Mentioned Entities -> Embedding Space
+- Fully aligned with the knowledge graph structure
+- Efficient and easy to scale
+- Robust to missing entities or sparse user histories
