@@ -1,0 +1,4 @@
+<Error>
+<Code>PublicAccessNotPermitted</Code>
+<Message>Public access is not permitted on this storage account. RequestId:d2935277-501e-000d-1a06-cbadb4000000 Time:2026-04-13T05:28:13.7977185Z</Message>
+</Error>
